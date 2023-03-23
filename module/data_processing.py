@@ -4,32 +4,35 @@ from typing import Dict, List, Union, Any
 import torch
 import torchaudio
 from transformers import Wav2Vec2Processor
+from datasets import load_dataset, Audio
 
 
 def encode_dataset(batch, processor, phonemize=False, backend=None, separator=None):
     if not isinstance(batch["labels"], list):
         if phonemize:
             with processor.as_target_processor():
-                if phonemize == 'g2p':
+                if phonemize == "g2p":
                     batch["labels"] = processor(backend.encode(batch["labels"])).input_ids
                 else:
                     batch["labels"] = processor(backend.phonemize([batch["labels"]], separator=separator)[0]).input_ids
         else:
             try:
                 with processor.as_target_processor():
-                    line = bytes(batch["labels"], 'utf-8').decode('utf-8', 'ignore')
+                    line = bytes(batch["labels"], "utf-8").decode("utf-8", "ignore")
                     batch["labels"] = processor(line).input_ids
             except Exception as e:
-                line = bytes(batch["labels"], 'utf-8').decode('utf-8', 'ignore')
+                line = bytes(batch["labels"], "utf-8").decode("utf-8", "ignore")
                 batch["labels"] = processor.tokenizer(line).input_ids
     return batch
 
 
 def prepare_dataset_hf(batch, processor, audio_feature_key):
     audio = batch["audio"]
-    batch[audio_feature_key] = processor(audio["array"], sampling_rate=audio["sampling_rate"]).get(audio_feature_key)[0]
+    batch[audio_feature_key] = processor(audio["array"], sampling_rate=audio["sampling_rate"]).get(audio_feature_key)[
+        0
+    ]
     batch["lengths"] = len(batch[audio_feature_key])
-    if 'sentence' in batch:
+    if "sentence" in batch:
         batch["labels"] = batch["sentence"]
     else:
         batch["labels"] = batch["text"]
@@ -39,28 +42,36 @@ def prepare_dataset_hf(batch, processor, audio_feature_key):
 def prepare_dataset_custom(batch, audio_feature_key):
     path = batch["path"]
     speech, sampling_rate = torchaudio.load(path)
-    if sampling_rate != '16_000' or sampling_rate != '16000':
+    if sampling_rate != "16_000" or sampling_rate != "16000":
         resampler = torchaudio.transforms.Resample(orig_freq=sampling_rate, new_freq=16_000)
         batch[audio_feature_key] = resampler.forward(speech.squeeze(0)).numpy()
     else:
         batch[audio_feature_key] = speech.squeeze(0).numpy()
     batch["lengths"] = len(batch[audio_feature_key])
-    if 'sentence' in batch:
+    if "sentence" in batch:
         batch["labels"] = batch["sentence"]
     else:
         batch["labels"] = batch["text"]
     return batch
 
 
-def prepare_dataset_whisper(batch, feature_extractor):
-    # compute log-Mel input features from input audio array
-    if 'input_values' in batch:
-        batch["input_values"] = feature_extractor(batch["input_values"], sampling_rate=16000).input_features[0]
+def prepare_dataset_whisper(batch, feature_extractor, audio_feature_key):
+    path = batch["path"]
+    speech, sampling_rate = torchaudio.load(path)
+    if sampling_rate != "16_000" or sampling_rate != "16000":
+        resampler = torchaudio.transforms.Resample(orig_freq=sampling_rate, new_freq=16_000)
+        batch[audio_feature_key] = resampler.forward(speech.squeeze(0)).numpy()
     else:
-        batch["input_features"] = feature_extractor(batch["input_features"], sampling_rate=16000).input_features[0]
-
+        batch[audio_feature_key] = speech.squeeze(0).numpy()
+    # compute log-Mel input features from input audio array
+    batch[audio_feature_key] = feature_extractor(batch[audio_feature_key], sampling_rate=16000).input_features[0]
+    batch["lengths"] = len(batch[audio_feature_key])
     # # encode target text to label ids
     # batch["labels"] = tokenizer(batch["sentence"]).input_ids
+    if "sentence" in batch:
+        batch["labels"] = batch["sentence"]
+    else:
+        batch["labels"] = batch["text"]
     return batch
 
 

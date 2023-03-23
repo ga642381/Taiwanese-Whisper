@@ -1,14 +1,8 @@
-transformers>=4.11.3
-datasets>=1.13.3
-torchaudio>=0.4.0
-librosa
-editdistance
-
-
-# Eric self
-nlp2
-
-
-# Eric missed?
-phonemizer
-pyctcdecode
+datasets==2.10.1
+editdistance==0.6.2
+nlp2==1.8.48
+pandas==1.5.3
+torch==1.10.1
+torchaudio==0.10.1
+tqdm==4.65.0
+transformers==4.27.2
