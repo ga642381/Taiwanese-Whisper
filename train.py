@@ -10,6 +10,7 @@ from transformers import TrainingArguments, Seq2SeqTrainingArguments
 from transformers import WhisperFeatureExtractor
 from transformers import WhisperForConditionalGeneration
 from transformers import WhisperProcessor
+from datasets import load_from_disk
 
 from module.args import parse_args
 from module.data_processing import (
@@ -29,17 +30,23 @@ def main(arg=None):
     ############
     #  Config  #
     ############
-    input_arg["custom_set_train"] = "TAT-Vol1-train.csv"
-    input_arg["custom_set_test"] = "TAT-Vol1-eval.csv"
+    input_arg["custom_set_train"] = "./TAT-data/TAT-Vol1-train.csv"
+    input_arg["custom_set_test"] = "./TAT-data/TAT-Vol1-eval.csv"
     input_arg["tokenize_config"] = "openai/whisper-base"
     input_arg["model_config"] = "openai/whisper-base"
     input_arg["output_dir"] = "whisper-base_result/"
     input_arg["group_by_length"] = True
+    # input_arg["load_cache"] = True
+    # input_arg["batch"] = 4
 
     print("input_arg", input_arg)
     # repo_name = f"{input_arg['model_config']}-{input_arg['custom_set_train'] if 'custom_set_train' in input_arg else input_arg['train_subset']}"
     # repo_name = repo_name.replace("/", "_")
     repo_name = f"{input_arg['model_config']}-TAT-Vol1"
+
+    ############
+    #  Model   #
+    ############
 
     # feature_extractor = WhisperFeatureExtractor.from_pretrained(input_arg['model_config'])
     processor = WhisperProcessor.from_pretrained(input_arg["model_config"], task="transcribe")
@@ -50,40 +57,37 @@ def main(arg=None):
     audio_feature_key = inspect.getfullargspec(model.forward).args[1]
     data_collator = DataCollatorSpeechSeq2SeqWithPadding(processor=processor, audio_feature_key=audio_feature_key)
 
-    # data set
-    dataset = load_dataset("csv", data_files=input_arg["custom_set_train"], cache_dir=input_arg["cache_dir"])
-    dataset = dataset.filter(lambda e: nlp2.is_file_exist(e["path"]))
-    if "custom_set_test" in input_arg:
-        dataset_test = load_dataset("csv", data_files=input_arg["custom_set_test"], cache_dir=input_arg["cache_dir"])
-        dataset_test = dataset_test.filter(lambda e: nlp2.is_file_exist(e["path"]))
-        data_test = dataset_test["train"]
-    else:
-        dataset = dataset["train"].train_test_split(test_size=0.1)
-        data_test = dataset["test"]
-
-    data_train = dataset["train"]
-    data_train = data_train.map(
-        prepare_dataset_whisper,
-        num_proc=input_arg["num_proc"],
-        fn_kwargs={"feature_extractor": processor.feature_extractor, "audio_feature_key": audio_feature_key},
-    )
-    data_test = data_test.map(
-        prepare_dataset_whisper,
-        num_proc=input_arg["num_proc"],
-        fn_kwargs={"feature_extractor": processor.feature_extractor, "audio_feature_key": audio_feature_key},
-    )
-    # data_train = data_train.map(
-    #     prepare_dataset_custom, num_proc=input_arg["num_proc"], fn_kwargs={"audio_feature_key": audio_feature_key}
-    # )
-    # data_test = data_test.map(
-    #     prepare_dataset_custom, num_proc=input_arg["num_proc"], fn_kwargs={"audio_feature_key": audio_feature_key}
-    # )
-
-    print("init dataset")
-    print("data train", data_train)
-    print("data test", data_test)
+    ############
+    #  Dataset #
+    ############
 
     if not input_arg.get("load_cache", False):
+        # data set
+        dataset = load_dataset("csv", data_files=input_arg["custom_set_train"], cache_dir=input_arg["cache_dir"])
+        dataset = dataset.filter(lambda e: nlp2.is_file_exist(e["path"]))
+        if "custom_set_test" in input_arg:
+            dataset_test = load_dataset(
+                "csv", data_files=input_arg["custom_set_test"], cache_dir=input_arg["cache_dir"]
+            )
+            dataset_test = dataset_test.filter(lambda e: nlp2.is_file_exist(e["path"]))
+            data_test = dataset_test["train"]
+        else:
+            dataset = dataset["train"].train_test_split(test_size=0.1)
+            data_test = dataset["test"]
+
+        data_train = dataset["train"]
+        data_train = data_train.map(
+            prepare_dataset_whisper,
+            num_proc=input_arg["num_proc"],
+            fn_kwargs={"feature_extractor": processor.feature_extractor, "audio_feature_key": audio_feature_key},
+        )
+        data_test = data_test.map(
+            prepare_dataset_whisper,
+            num_proc=input_arg["num_proc"],
+            fn_kwargs={"feature_extractor": processor.feature_extractor, "audio_feature_key": audio_feature_key},
+        )
+
+        # original code
         print("before filtering audio length")
         print("data train", data_train)
         print("data test", data_test)
@@ -106,6 +110,8 @@ def main(arg=None):
         print("data train", data_train)
         print("data test", data_test)
 
+        # ======================================= #
+
         print("before filtering label length")
         print("data train", data_train)
         print("data test", data_test)
@@ -115,10 +121,11 @@ def main(arg=None):
         print("data train", data_train)
         print("data test", data_test)
 
+        # ======================================= #
+
         print("before encoding dataset")
         print("data train", data_train)
         print("data test", data_test)
-        phonemize = input_arg.get("phoneme", False)
 
         if not input_arg.get("only_eval", False):
             data_train = data_train.map(encode_dataset, fn_kwargs={"processor": processor})
@@ -127,11 +134,13 @@ def main(arg=None):
         print("data train", data_train)
         print("data test", data_test)
 
+        # ======================================= #
+
         data_train.save_to_disk(f"{repo_name}-train.data")
         data_test.save_to_disk(f"{repo_name}-test.data")
     else:
-        data_train.load_from_disk(f"{repo_name}-train.data")
-        data_test.load_from_disk(f"{repo_name}-test.data")
+        data_train = load_from_disk(f"{repo_name}-train.data")
+        data_test = load_from_disk(f"{repo_name}-test.data")
 
     print("finalize dataset")
     print("data train", data_train)
@@ -139,19 +148,31 @@ def main(arg=None):
     print("train labels", data_train[0]["labels"])
     print("test labels", data_test[0]["labels"])
 
+    ################
+    #    Sample    #
+    ################
+    sample_text = "tsu7-tsi2 ti7 to2-ui7?"
+    labels = processor.tokenizer(sample_text)["input_ids"]
+    decoded_with_special = processor.tokenizer.decode(labels, skip_special_tokens=False)
+    decoded_str = processor.tokenizer.decode(labels, skip_special_tokens=True)
+
+    print(f"Input:                 {sample_text}")
+    print(f"Decoded w/ special:    {decoded_with_special}")
+    print(f"Decoded w/out special: {decoded_str}")
+    print(f"Are equal:             {sample_text == decoded_str}")
+
+    ################
+    #     Train    #
+    ################
+
     if input_arg.get("sweep_split_shard", False):
         shuffled_dataset = data_train.shuffle(seed=42)
         data_train = shuffled_dataset.shard(num_shards=input_arg.get("sweep_split_shard"), index=0)
         data_train = data_train.shard(num_shards=input_arg.get("sweep_split_shard"), index=0)
         data_test = data_train
 
-    if "openai/whisper" in input_arg["model_config"]:
-        trainer_class = Seq2SeqTrainer
-        trainer_aug_class = Seq2SeqTrainingArguments
-    else:
-        trainer_class = Trainer
-        trainer_aug_class = TrainingArguments
-        model.gradient_checkpointing_enable()
+    trainer_class = Seq2SeqTrainer
+    trainer_aug_class = Seq2SeqTrainingArguments
 
     training_args = trainer_aug_class(
         output_dir=input_arg.get("output_dir", repo_name),
@@ -180,9 +201,9 @@ def main(arg=None):
         push_to_hub=False,
         report_to="all",
     )
-    if "openai/whisper" in input_arg["model_config"]:
-        training_args.predict_with_generate = True
-        training_args.generation_max_length = 225
+
+    training_args.predict_with_generate = True
+    training_args.generation_max_length = 225
 
     def compute_metrics(pred):
         pred_ids = pred.predictions
