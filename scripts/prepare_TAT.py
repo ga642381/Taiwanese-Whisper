@@ -3,6 +3,7 @@ from tqdm import tqdm
 from pathlib import Path
 import pandas as pd
 from functools import partial
+import argparse
 
 # Prepare TAT dataset in such format (https://github.com/voidful/asr-training):
 """
@@ -90,20 +91,25 @@ def validate_transcription(transcript, transcript_type, bad_count, verbose_fp=No
         return cleaned_transcript, -1
 
 
-def main():
+def main(args):
     ############
     #  Config  #
     ############
+    # args
     transcript_type = "台羅數字調"  # 台羅 or 漢羅台文 or 台羅數字調
     wav_type = "condenser"
+    TAT_root = args.TAT_root
+    output_root = args.output_root
 
-    TAT_root = "/storage/speech_dataset/TAT/TAT-Vol1-train"
-    output_path = "./TAT-Vol1-train.csv"
-
+    # paths
     TAT_root = Path(TAT_root).resolve()
+    output_root = Path(output_root).resolve()
+    output_path = output_root / f"{TAT_root.name}.csv"
+
     TAT_txt_dir = TAT_root / "json"
     TAT_wav_dir = TAT_root / wav_type / "wav"
 
+    # data list
     TAT_txt_list = list(TAT_txt_dir.rglob("*.json"))
     TAT_wav_list = [get_wav_from_txt(txt_path, TAT_wav_dir) for txt_path in tqdm(TAT_txt_list)]
 
@@ -138,4 +144,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    """
+    e.g.
+    python prepare_TAT.py --TAT_root /storage/speech_dataset/TAT/TAT-Vol1-train
+    python prepare_TAT.py --TAT_root /storage/speech_dataset/TAT/TAT-Vol1-eval
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--TAT_root", type=str, default="/storage/speech_dataset/TAT/TAT-Vol1-train")
+    parser.add_argument("--output_root", type=str, default="../TAT-data")
+    args = parser.parse_args()
+    main(args)
